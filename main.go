@@ -41,13 +41,16 @@ func getItem(c echo.Context) (string, error) {
 }
 
 func main() {
+	authKey := strings.TrimSpace(os.Getenv("PIN_AUTH"))
+	if authKey == "" {
+		log.Fatal("No PIN_AUTH set!")
+	}
+
 	db, err := badger.Open(badger.DefaultOptions("db"))
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "could not open DB"))
 	}
 	defer db.Close()
-
-	// items := map[string]time.Time{}
 
 	e := echo.New()
 	e.Use(
@@ -78,13 +81,15 @@ func main() {
 
 					return echo.NewHTTPError(
 						http.StatusForbidden,
-						errors.Wrap(err, "could not get auth cookie"))
+						errors.Wrap(err, "could not get auth cookie"),
+					)
 				}
 
-				if auth.Value != os.Getenv("PIN_AUTH") {
+				if auth.Value != authKey {
 					return echo.NewHTTPError(
 						http.StatusForbidden,
-						"invalid auth cookie")
+						"invalid auth cookie",
+					)
 				}
 
 				return next(c)
@@ -118,7 +123,8 @@ func main() {
 		}); err != nil {
 			return echo.NewHTTPError(
 				http.StatusInternalServerError,
-				errors.Wrap(err, "db iteration failure"))
+				errors.Wrap(err, "db iteration failure"),
+			)
 		}
 
 		sort.Slice(entries, func(i, j int) bool {
@@ -150,7 +156,8 @@ func main() {
 		}); err != nil {
 			return echo.NewHTTPError(
 				http.StatusInternalServerError,
-				errors.Wrap(err, "db transaction failure"))
+				errors.Wrap(err, "db transaction failure"),
+			)
 		}
 		return nil
 	})
@@ -166,7 +173,8 @@ func main() {
 		}); err != nil {
 			return echo.NewHTTPError(
 				http.StatusInternalServerError,
-				errors.Wrap(err, "db transaction failure"))
+				errors.Wrap(err, "db transaction failure"),
+			)
 		}
 
 		return nil

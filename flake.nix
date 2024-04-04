@@ -5,6 +5,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
+        inherit (pkgs.lib) getExe;
         jade = pkgs.buildGoModule rec {
           pname = "jade";
           version = "2a11849";
@@ -15,6 +16,7 @@
             hash = "sha256-spydTTkaIyQKfiGCP2lzUFN16DQElQnPGuJVzcvq5FY=";
           };
           vendorHash = "sha256-n4WeygbreZQwp6immjWzTT/IjAedZv27joSVU4wBPWI=";
+          meta.mainProgram = "jade";
         };
       in
       rec {
@@ -24,8 +26,17 @@
           vendorHash = "sha256-J1IwR/3vXXjxPIKPVOG9hKIUiv8b3sgv/J382eh/bHQ=";
 
           preBuild = ''
-            ${jade}/bin/jade -d jade -writer .
+            ${getExe jade} -d jade -writer .
           '';
+
+          CGO_ENABLED = "0";
+          meta.mainProgram = "pin";
+        };
+
+        packages.image = pkgs.dockerTools.buildImage {
+          name = "pinlist";
+          tag = "latest";
+          config.Cmd = [ "${getExe packages.default}" ];
         };
 
         devShells.default = pkgs.mkShell {
