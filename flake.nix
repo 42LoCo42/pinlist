@@ -6,6 +6,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
         inherit (pkgs.lib) getExe;
+
         jade = pkgs.buildGoModule rec {
           pname = "jade";
           version = "2a11849";
@@ -21,7 +22,7 @@
       in
       rec {
         packages.default = pkgs.buildGoModule {
-          name = "pin";
+          name = "pinlist";
           src = ./.;
           vendorHash = "sha256-J1IwR/3vXXjxPIKPVOG9hKIUiv8b3sgv/J382eh/bHQ=";
 
@@ -30,7 +31,7 @@
           '';
 
           CGO_ENABLED = "0";
-          meta.mainProgram = "pin";
+          meta.mainProgram = "pinlist";
         };
 
         packages.image = pkgs.dockerTools.buildImage {

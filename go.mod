@@ -1,4 +1,4 @@
-module github.com/42LoCo42/pin
+module github.com/42LoCo42/pinlist
 
 go 1.20
 
