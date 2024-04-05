@@ -2,11 +2,14 @@ package main
 
 import (
 	"embed"
+	"fmt"
+	"html"
 	"io"
 	"log"
 	"math"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -133,7 +136,12 @@ func main() {
 
 		items := []string{}
 		for _, item := range entries {
-			items = append(items, item.item)
+			item := html.EscapeString(item.item)
+			if errors.Must(regexp.MatchString("^https?://", item)) {
+				item = fmt.Sprintf(`<a href="%v">%v</a>`, item, item)
+			}
+
+			items = append(items, item)
 		}
 
 		jade.Jade_index(items, c.Response())

@@ -17,6 +17,6 @@ html(lang="en")
             td
               input(type="submit" value="🗑️" onclick="del(this)")
             td(id="item")
-              | #{item}
+              != item
       input(type="text" id="newItem" autofocus="")
       input(type="submit" value="➕" onclick="add(this)")
