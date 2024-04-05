@@ -14,10 +14,12 @@ async function add(btn) {
 }
 
 async function del(btn) {
-	const item = btn.closest("tr").querySelector("#item");
+	const item = btn.closest("tr").querySelector("#item").textContent;
+	if (!window.confirm(`really delete ${item}?`)) return;
+
 	const res = await fetch("/del", {
 		method: "POST",
-		body: item.textContent,
+		body: item,
 	});
 
 	if (res.ok) {
