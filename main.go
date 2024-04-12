@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/42LoCo42/pinlist/jade"
+	"github.com/glebarez/sqlite"
 	"github.com/go-faster/errors"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 

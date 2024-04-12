@@ -21,22 +21,24 @@
         };
       in
       rec {
-        packages.default = pkgs.buildGoModule {
+        packages.default = pkgs.buildGoModule rec {
           name = "pinlist";
           src = ./.;
-          vendorHash = "sha256-PjYUoOYuiOBQb4XGebMKhZ9zaPJeEaspUvQqps+OO6U=";
+          vendorHash = "sha256-IoLVAfAY+678IVp6yszj62NjBqPruomnHyDd8RqtFPs=";
 
           preBuild = ''
             ${getExe jade} -d jade -writer .
           '';
 
+          CGO_ENABLED = "0";
+          stripAllList = [ "bin" ];
           meta.mainProgram = "pinlist";
         };
 
         packages.image = pkgs.dockerTools.buildImage {
           name = "pinlist";
           tag = "latest";
-          config.Cmd = [ "${getExe packages.default}" ];
+          config.Cmd = [ (getExe packages.default) ];
         };
 
         devShells.default = pkgs.mkShell {
