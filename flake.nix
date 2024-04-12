@@ -24,13 +24,12 @@
         packages.default = pkgs.buildGoModule {
           name = "pinlist";
           src = ./.;
-          vendorHash = "sha256-J1IwR/3vXXjxPIKPVOG9hKIUiv8b3sgv/J382eh/bHQ=";
+          vendorHash = "sha256-PjYUoOYuiOBQb4XGebMKhZ9zaPJeEaspUvQqps+OO6U=";
 
           preBuild = ''
             ${getExe jade} -d jade -writer .
           '';
 
-          CGO_ENABLED = "0";
           meta.mainProgram = "pinlist";
         };
 

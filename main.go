@@ -10,20 +10,21 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/42LoCo42/pinlist/jade"
-	"github.com/dgraph-io/badger/v4"
 	"github.com/go-faster/errors"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 type Entry struct {
-	item string
-	time time.Time
+	ID   uint
+	Item string
+	Time time.Time
 }
 
 //go:embed static
@@ -44,16 +45,19 @@ func getItem(c echo.Context) (string, error) {
 }
 
 func main() {
+	db, err := gorm.Open(sqlite.Open("db/pinlist.db"))
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "could not open database"))
+	}
+
+	if err := db.AutoMigrate(&Entry{}); err != nil {
+		log.Fatal(errors.Wrap(err, "database migration failed"))
+	}
+
 	authKey := strings.TrimSpace(os.Getenv("PIN_AUTH"))
 	if authKey == "" {
 		log.Fatal("No PIN_AUTH set!")
 	}
-
-	db, err := badger.Open(badger.DefaultOptions("db"))
-	if err != nil {
-		log.Fatal(errors.Wrap(err, "could not open DB"))
-	}
-	defer db.Close()
 
 	e := echo.New()
 	e.Use(
@@ -102,41 +106,13 @@ func main() {
 
 	e.GET("/", func(c echo.Context) error {
 		entries := []Entry{}
-
-		if err := db.View(func(txn *badger.Txn) error {
-			it := txn.NewIterator(badger.DefaultIteratorOptions)
-			defer it.Close()
-			for it.Rewind(); it.Valid(); it.Next() {
-				if err := it.Item().Value(func(val []byte) error {
-					var time time.Time
-					if err := time.UnmarshalBinary(val); err != nil {
-						return errors.Wrap(err, "could not unmarshal timestamp")
-					}
-
-					entries = append(entries, Entry{
-						item: string(it.Item().Key()),
-						time: time,
-					})
-					return nil
-				}); err != nil {
-					return err
-				}
-			}
-			return nil
-		}); err != nil {
-			return echo.NewHTTPError(
-				http.StatusInternalServerError,
-				errors.Wrap(err, "db iteration failure"),
-			)
+		if err := db.Order("time").Find(&entries).Error; err != nil {
+			return errors.Wrap(err, "could not list DB")
 		}
-
-		sort.Slice(entries, func(i, j int) bool {
-			return entries[i].time.UnixMilli() < entries[j].time.UnixMilli()
-		})
 
 		items := []string{}
 		for _, item := range entries {
-			item := html.EscapeString(item.item)
+			item := html.EscapeString(item.Item)
 			if errors.Must(regexp.MatchString("^https?://", item)) {
 				item = fmt.Sprintf(`<a href="%v">%v</a>`, item, item)
 			}
@@ -154,18 +130,11 @@ func main() {
 			return err
 		}
 
-		if err := db.Update(func(txn *badger.Txn) error {
-			val, err := time.Now().MarshalBinary()
-			if err != nil {
-				return errors.Wrap(err, "could not marshal timestamp")
-			}
-
-			return txn.Set([]byte(item), val)
-		}); err != nil {
-			return echo.NewHTTPError(
-				http.StatusInternalServerError,
-				errors.Wrap(err, "db transaction failure"),
-			)
+		if err := db.Create(&Entry{
+			Item: item,
+			Time: time.Now(),
+		}).Error; err != nil {
+			return errors.Wrap(err, "could not insert entry")
 		}
 		return nil
 	})
@@ -176,15 +145,9 @@ func main() {
 			return err
 		}
 
-		if err := db.Update(func(txn *badger.Txn) error {
-			return txn.Delete([]byte(item))
-		}); err != nil {
-			return echo.NewHTTPError(
-				http.StatusInternalServerError,
-				errors.Wrap(err, "db transaction failure"),
-			)
+		if err := db.Where("item = ?", item).Delete(&Entry{}).Error; err != nil {
+			return errors.Wrap(err, "could not delete item")
 		}
-
 		return nil
 	})
 
