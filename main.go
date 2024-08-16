@@ -13,11 +13,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/42LoCo42/pinlist/jade"
 	"github.com/glebarez/sqlite"
 	"github.com/go-faster/errors"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	g "github.com/maragudk/gomponents"
+	c "github.com/maragudk/gomponents/components"
+	. "github.com/maragudk/gomponents/html"
 	"gorm.io/gorm"
 )
 
@@ -120,8 +122,7 @@ func main() {
 			items = append(items, item)
 		}
 
-		jade.Jade_index(items, c.Response())
-		return nil
+		return Page(items).Render(c.Response())
 	})
 
 	e.POST("/add", func(c echo.Context) error {
@@ -154,4 +155,30 @@ func main() {
 	if err := e.Start(":8000"); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func Page(items []string) g.Node {
+	return c.HTML5(c.HTML5Props{
+		Title:    "Pinlist",
+		Language: "en",
+		Head: []g.Node{
+			Script(Src("/lib.js")),
+		},
+		Body: []g.Node{
+			H1(g.Text("Pinlist")),
+			Form(Action("javascript:"),
+				Input(Type("submit"), g.Attr("onclick", "add(this)"), Style("display: none")),
+				Table(
+					g.Map(items, func(item string) g.Node {
+						return Tr(
+							Td(Input(Type("submit"), Value("🗑️"), g.Attr("onclick", "del(this)"))),
+							Td(ID("item"), g.Raw(item)),
+						)
+					})...,
+				),
+				Input(Type("text"), ID("newItem"), g.Attr("autofocus", "")),
+				Input(Type("submit"), Value("➕"), g.Attr("onclick", "add(this)")),
+			),
+		},
+	})
 }

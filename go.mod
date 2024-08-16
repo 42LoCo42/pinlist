@@ -6,6 +6,7 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-faster/errors v0.7.1
 	github.com/labstack/echo/v4 v4.11.4
+	github.com/maragudk/gomponents v0.20.4
 	gorm.io/gorm v1.25.9
 )
 
