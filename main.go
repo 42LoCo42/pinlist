@@ -6,9 +6,7 @@ import (
 	"html"
 	"io"
 	"log"
-	"math"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -56,11 +54,6 @@ func main() {
 		log.Fatal(errors.Wrap(err, "database migration failed"))
 	}
 
-	authKey := strings.TrimSpace(os.Getenv("PIN_AUTH"))
-	if authKey == "" {
-		log.Fatal("No PIN_AUTH set!")
-	}
-
 	e := echo.New()
 	e.Use(
 		middleware.LoggerWithConfig(middleware.LoggerConfig{
@@ -72,38 +65,6 @@ func main() {
 			Root:       "static",
 			Filesystem: http.FS(staticFS),
 		}),
-
-		// yes i know this is cringe, but pinlist doesn't really need to be super secure
-		func(next echo.HandlerFunc) echo.HandlerFunc {
-			return func(c echo.Context) error {
-				auth, err := c.Cookie("auth")
-				if err != nil {
-					c.SetCookie(&http.Cookie{
-						Name:     "auth",
-						Value:    "0",
-						Path:     "/",
-						MaxAge:   math.MaxInt32,
-						Secure:   true,
-						HttpOnly: true,
-						SameSite: http.SameSiteStrictMode,
-					})
-
-					return echo.NewHTTPError(
-						http.StatusForbidden,
-						errors.Wrap(err, "could not get auth cookie"),
-					)
-				}
-
-				if auth.Value != authKey {
-					return echo.NewHTTPError(
-						http.StatusForbidden,
-						"invalid auth cookie",
-					)
-				}
-
-				return next(c)
-			}
-		},
 	)
 
 	e.GET("/", func(c echo.Context) error {
@@ -152,7 +113,7 @@ func main() {
 		return nil
 	})
 
-	if err := e.Start(":8000"); err != nil {
+	if err := e.Start(":8080"); err != nil {
 		log.Fatal(err)
 	}
 }
