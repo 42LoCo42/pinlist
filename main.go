@@ -1,24 +1,42 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"html"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/glebarez/sqlite"
-	"github.com/go-faster/errors"
+	// HTTP
+	"github.com/gorilla/securecookie"
+	"github.com/gorilla/sessions"
+	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+
+	// HTML
 	g "github.com/maragudk/gomponents"
 	c "github.com/maragudk/gomponents/components"
 	. "github.com/maragudk/gomponents/html"
+
+	// DB
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+
+	// OIDC
+	"github.com/zitadel/oidc/v3/pkg/client/rp"
+	httphelper "github.com/zitadel/oidc/v3/pkg/http"
+	"github.com/zitadel/oidc/v3/pkg/oidc"
+
+	// misc
+	"github.com/go-faster/errors"
+	"github.com/google/uuid"
 )
 
 type Entry struct {
@@ -29,6 +47,12 @@ type Entry struct {
 
 //go:embed static
 var staticFS embed.FS
+
+var sessionCookieName string = "__Host-session"
+
+var oidc_issuer = os.Getenv("PINLIST_OIDC_ISSUER")
+var oidc_client_id = os.Getenv("PINLIST_OIDC_CLIENT_ID")
+var oidc_client_secret = os.Getenv("PINLIST_OIDC_CLIENT_SECRET")
 
 func getItem(c echo.Context) (string, error) {
 	raw, err := io.ReadAll(c.Request().Body)
@@ -45,19 +69,42 @@ func getItem(c echo.Context) (string, error) {
 }
 
 func main() {
-	db, err := gorm.Open(sqlite.Open("db/pinlist.db"))
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
+	ctx := context.Background()
+	key := securecookie.GenerateRandomKey(32)
+
+	provider, err := rp.NewRelyingPartyOIDC(
+		ctx,
+		oidc_issuer,
+		oidc_client_id,
+		oidc_client_secret,
+		"",
+		[]string{"openid"},
+		rp.WithPKCE(httphelper.NewCookieHandler(key, key)),
+	)
 	if err != nil {
-		log.Fatal(errors.Wrap(err, "could not open database"))
+		return errors.Wrap(err, "failed to create OIDC provider")
+	}
+
+	db, err := gorm.Open(sqlite.Open(os.Args[1]))
+	if err != nil {
+		return errors.Wrap(err, "could not open database")
 	}
 
 	if err := db.AutoMigrate(&Entry{}); err != nil {
-		log.Fatal(errors.Wrap(err, "database migration failed"))
+		return errors.Wrap(err, "database migration failed")
 	}
 
 	e := echo.New()
+
 	e.Use(
 		middleware.LoggerWithConfig(middleware.LoggerConfig{
-			Format:           "${time_custom} ${remote_ip} - ${method} ${host}${uri} - ${status} ${error}\n",
+			Format:           "${time_custom} ${remote_ip} - ${method} ${uri} - ${status} ${error}\n",
 			CustomTimeFormat: "2006/01/02 15:04:05",
 		}),
 
@@ -65,7 +112,35 @@ func main() {
 			Root:       "static",
 			Filesystem: http.FS(staticFS),
 		}),
+
+		session.Middleware(sessions.NewCookieStore(key)),
 	)
+
+	authed := func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			fail := func() error {
+				rp.AuthURLHandler(
+					func() string {
+						return uuid.NewString()
+					},
+					provider,
+				)(c.Response(), c.Request())
+				return nil
+			}
+
+			sess, err := session.Get(sessionCookieName, c)
+			if err != nil {
+				return fail()
+			}
+
+			login, ok := sess.Values["login"].(bool)
+			if !(ok && login) {
+				return fail()
+			}
+
+			return next(c)
+		}
+	}
 
 	e.GET("/", func(c echo.Context) error {
 		entries := []Entry{}
@@ -84,7 +159,7 @@ func main() {
 		}
 
 		return Page(items).Render(c.Response())
-	})
+	}, authed)
 
 	e.POST("/add", func(c echo.Context) error {
 		item, err := getItem(c)
@@ -99,7 +174,7 @@ func main() {
 			return errors.Wrap(err, "could not insert entry")
 		}
 		return nil
-	})
+	}, authed)
 
 	e.POST("/del", func(c echo.Context) error {
 		item, err := getItem(c)
@@ -111,11 +186,48 @@ func main() {
 			return errors.Wrap(err, "could not delete item")
 		}
 		return nil
+	}, authed)
+
+	e.GET("/oauth2/callback", func(c echo.Context) error {
+		var err error = nil
+		rp.CodeExchangeHandler(
+			rp.UserinfoCallback(func(
+				w http.ResponseWriter,
+				r *http.Request,
+				tokens *oidc.Tokens[*oidc.IDTokenClaims],
+				state string,
+				rp rp.RelyingParty,
+				info *oidc.UserInfo,
+			) {
+				err = func() error {
+					sess, err := session.Get(sessionCookieName, c)
+					if err != nil {
+						return errors.Wrap(err, "failed to get session")
+					}
+
+					sess.Options = &sessions.Options{
+						Path:     "/",
+						MaxAge:   86400,
+						Secure:   true,
+						HttpOnly: true,
+						SameSite: http.SameSiteStrictMode,
+					}
+
+					sess.Values["login"] = true
+					if err := sess.Save(c.Request(), c.Response()); err != nil {
+						return errors.Wrap(err, "failed to save session")
+					}
+
+					// this is stupid
+					return c.HTML(http.StatusOK, "<script>location = '/'</script>")
+				}()
+			}),
+			provider,
+		)(c.Response(), c.Request())
+		return err
 	})
 
-	if err := e.Start(":8080"); err != nil {
-		log.Fatal(err)
-	}
+	return e.Start(":8080")
 }
 
 func Page(items []string) g.Node {
