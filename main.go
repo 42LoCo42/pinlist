@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
+	"encoding/base64"
 	"fmt"
 	"html"
 	"io"
@@ -14,9 +16,8 @@ import (
 	"time"
 
 	// HTTP
-	"github.com/gorilla/securecookie"
-	"github.com/gorilla/sessions"
-	"github.com/labstack/echo-contrib/session"
+	"github.com/go-session/echo-session"
+	"github.com/go-session/session/v3"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
@@ -36,7 +37,6 @@ import (
 
 	// misc
 	"github.com/go-faster/errors"
-	"github.com/google/uuid"
 )
 
 type Entry struct {
@@ -69,6 +69,22 @@ func getItem(c echo.Context) (string, error) {
 	return item, nil
 }
 
+func sessGet[T any](sess session.Store, key string) (val T, ok bool) {
+	raw, ok := sess.Get(key)
+	if !ok {
+		return val, false
+	}
+
+	val, ok = raw.(T)
+	return
+}
+
+func genKey() []byte {
+	val := make([]byte, 32)
+	errors.Must(rand.Read(val))
+	return val
+}
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
@@ -77,7 +93,7 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
-	key := securecookie.GenerateRandomKey(32)
+	key := genKey()
 
 	provider, err := rp.NewRelyingPartyOIDC(
 		ctx,
@@ -85,7 +101,7 @@ func run() error {
 		oidc_client_id,
 		oidc_client_secret,
 		fmt.Sprintf("%v/oauth2/callback", oidc_redirect),
-		[]string{"openid"},
+		[]string{"openid", "profile"},
 		rp.WithPKCE(httphelper.NewCookieHandler(key, key)),
 	)
 	if err != nil {
@@ -114,29 +130,26 @@ func run() error {
 			Filesystem: http.FS(staticFS),
 		}),
 
-		session.Middleware(sessions.NewCookieStore(key)),
+		echosession.New(
+			session.SetCookieName(sessionCookieName),
+			session.SetSameSite(http.SameSiteStrictMode),
+			session.SetSecure(true),
+			session.SetCookieLifeTime(86400),
+		),
 	)
 
 	authed := func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			fail := func() error {
+			sess := echosession.FromContext(c)
+			login, ok := sessGet[bool](sess, "login")
+			if !ok || !login {
 				rp.AuthURLHandler(
 					func() string {
-						return uuid.NewString()
+						return base64.RawURLEncoding.EncodeToString(genKey())
 					},
 					provider,
 				)(c.Response(), c.Request())
 				return nil
-			}
-
-			sess, err := session.Get(sessionCookieName, c)
-			if err != nil {
-				return fail()
-			}
-
-			login, ok := sess.Values["login"].(bool)
-			if !(ok && login) {
-				return fail()
 			}
 
 			return next(c)
@@ -201,21 +214,11 @@ func run() error {
 				info *oidc.UserInfo,
 			) {
 				err = func() error {
-					sess, err := session.Get(sessionCookieName, c)
-					if err != nil {
-						return errors.Wrap(err, "failed to get session")
-					}
+					log.Printf("login by %v", info.Name)
 
-					sess.Options = &sessions.Options{
-						Path:     "/",
-						MaxAge:   86400,
-						Secure:   true,
-						HttpOnly: true,
-						SameSite: http.SameSiteStrictMode,
-					}
-
-					sess.Values["login"] = true
-					if err := sess.Save(c.Request(), c.Response()); err != nil {
+					sess := echosession.FromContext(c)
+					sess.Set("login", true)
+					if err := sess.Save(); err != nil {
 						return errors.Wrap(err, "failed to save session")
 					}
 

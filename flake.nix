@@ -8,7 +8,8 @@
       rec {
         packages.default = pkgs.buildGoModule rec {
           pname = "pinlist";
-          version = "1.1.0";
+          version = "1.2.0";
+
           src = toSource {
             root = ./.;
             fileset = unions [
@@ -20,7 +21,7 @@
           };
 
           ldflags = [ "-s" "-w" ];
-          vendorHash = "sha256-BPQk2IFemxrElWkPyv1Y+RYNIFQeF+0ofgu97Buo0L4=";
+          vendorHash = "sha256-DJxWvd9ABBkxJxqFdr3C2GVUs2Hxmr9GhOBnVj+Ip6Q=";
 
           meta = {
             description = "Super simple text/link pinlist tool";
