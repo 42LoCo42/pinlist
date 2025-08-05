@@ -53,6 +53,7 @@ var sessionCookieName string = "__Host-session"
 var oidc_issuer = os.Getenv("PINLIST_OIDC_ISSUER")
 var oidc_client_id = os.Getenv("PINLIST_OIDC_CLIENT_ID")
 var oidc_client_secret = os.Getenv("PINLIST_OIDC_CLIENT_SECRET")
+var oidc_redirect = os.Getenv("PINLIST_OIDC_REDIRECT")
 
 func getItem(c echo.Context) (string, error) {
 	raw, err := io.ReadAll(c.Request().Body)
@@ -83,7 +84,7 @@ func run() error {
 		oidc_issuer,
 		oidc_client_id,
 		oidc_client_secret,
-		"",
+		fmt.Sprintf("%v/oauth2/callback", oidc_redirect),
 		[]string{"openid"},
 		rp.WithPKCE(httphelper.NewCookieHandler(key, key)),
 	)
